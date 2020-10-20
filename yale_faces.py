@@ -1,9 +1,22 @@
-import numpy as np
-from skimage import io
-from matplotlib import pyplot as plt
+import argparse
 import glob
+import numpy as np
+from matplotlib import pyplot as plt
+from numpy.lib.function_base import average
+from skimage import io
 
-SUPPORTED_IMAGE_DIM = (192, 168)
+parser = argparse.ArgumentParser(description='yale_faces')
+parser.add_argument('--cropped', dest='cropped', action='store_true')
+parser.add_argument('--uncropped', dest='cropped', action='store_false')
+parser.set_defaults(cropped=True)
+
+args = parser.parse_args()
+
+_SUPPORTED_IMAGE_DIM = (243, 320)
+_DATA_DIR = 'data/yalefaces_uncropped/yalefaces'
+if args.cropped:
+  _SUPPORTED_IMAGE_DIM = (192, 168)
+  _DATA_DIR = 'data/CroppedYale'
 
 
 def concat_images(images):
@@ -28,65 +41,73 @@ def concat_images(images):
   return A
 
 
-def read_images(dir_path, type='pgm'):
+def read_images():
   """
   Read all images under a directory recursively.
 
-  Args:
-    dir_path - directory to read images recursively.
-    type - the file extension that it searches for.
   Returns:
     A list of all images found and sorted by their names.
   """
+  image_file_ext = '.pgm' if args.cropped else ''
   images = []
-  for f in sorted(glob.glob(f'{dir_path}/**/*.{type}', recursive=True)):
-    image = io.imread(f)
-    assert image.shape == SUPPORTED_IMAGE_DIM, f'Image must be gray scaled '
-    f'{SUPPORTED_IMAGE_DIM}'
+  for f in sorted(glob.glob(f'{_DATA_DIR}/**/*{image_file_ext}',
+                            recursive=True)):
+    image = io.imread(f, as_gray=True)
+    assert image.shape == _SUPPORTED_IMAGE_DIM, f'Image must be gray scaled '\
+      f'{_SUPPORTED_IMAGE_DIM}, but got {image.shape}'
+
     images.append(image)
 
   return images
 
 
-def compute_svd(images):
+def compute_svd(image_matrix):
   """
+  Center the image matrix and compute its SVD decomposition.
+
+  Returns:
+    U - An orthonormal basis for `image_matrix`.
+    s - An array of singular values.
+    Vh - The projection matrix that projects `image_matrix` onto `U`.
   """
   # Center all images at the "origin"
-  avg = np.mean(images, axis=1)
-  for j in range(images.shape[1]):
-    images[:, j] -= avg
+  avg = np.mean(image_matrix, axis=1)
+  for j in range(image_matrix.shape[1]):
+    image_matrix[:, j] -= avg
 
   # Compute the SVD of the centered matrix. Images are stored as column vectors
   # in matrix `A`, therefore `U` provides an orthonormal basis and `V` is the
   # projection matrix that projects `A` onto `U`.
-  U, s, Vh = np.linalg.svd(images, full_matrices=False)
+  U, s, Vh = np.linalg.svd(image_matrix, full_matrices=False)
   return U, s, Vh
 
 
 def main():
   # Do SVD analysis for cropped images.
-  cropped_images = concat_images(read_images('data/CroppedYale/'))
-  print(f'Cropped images size: {cropped_images.shape}')
-  cropped_U, cropped_s, cropped_Vh = compute_svd(cropped_images)
+  images = concat_images(read_images())
+  print(f'Images size: {images.shape}')
+  U, s, Vh = compute_svd(images)
 
-  # Plot a first few reshaped columns of `cropped_U`
+  # Plot a first few reshaped columns of `U`
   fig = plt.figure(figsize=(8, 8))
-  fig.suptitle('Orthonormal Basis for Cropped Images')
+  fig.suptitle('Orthonormal Basis for Images')
   for i in range(1, 26):
-    img = cropped_U[:, i-1].reshape(SUPPORTED_IMAGE_DIM)
+    img = U[:, i - 1].reshape(_SUPPORTED_IMAGE_DIM)
     fig.add_subplot(5, 5, i)
     plt.imshow(img, cmap='gray')
     plt.axis('off')
   plt.show()
 
-  print(f'Rank: {len(cropped_s)}')
-  print(cropped_s[:100])
+  # Print out a few singular values.
+  print(f'Rank: {len(s)}')
+  print(s[:100])
 
-  # Plot singular values to show the decay.
-  plt.title('Singular Value Decay for Cropped Images')
+  # Plot singular values (normalized) to show the decay.
+  plt.title('Singular Value Decay for Images')
   plt.ylabel('Singular Values')
-  plt.xticks(np.arange(0, len(cropped_s), 100))
-  plt.plot(cropped_s)
+  t = np.arange(0, len(s))
+  plt.xticks(np.arange(0, len(s), 500))
+  plt.plot(t, s)
   plt.show()
 
 
