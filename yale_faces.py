@@ -2,7 +2,6 @@ import argparse
 import glob
 import numpy as np
 from matplotlib import pyplot as plt
-from numpy.lib.function_base import average
 from skimage import io
 
 parser = argparse.ArgumentParser(description='yale_faces')
@@ -82,32 +81,89 @@ def compute_svd(image_matrix):
   return U, s, Vh
 
 
+def top_singular_values_with_percentile(sigmas, percentile=0.9):
+  """
+  Returns the number of singular value used to achieve certain percentile
+  of the total.
+  """
+  assert percentile > 0 and percentile <= 1
+  total = np.sum(sigmas**2)
+  idx, current = 0, 0.0
+  for i, s in enumerate(sigmas):
+    current += s**2
+    if current >= (total * percentile):
+      idx = i
+      break
+
+  return idx + 1
+
+
 def main():
   # Do SVD analysis for cropped images.
   images = concat_images(read_images())
   print(f'Images size: {images.shape}')
-  U, s, Vh = compute_svd(images)
+  U, sigmas, Vh = compute_svd(images)
 
   # Plot a first few reshaped columns of `U`
   fig = plt.figure(figsize=(8, 8))
   fig.suptitle('Orthonormal Basis for Images')
   for i in range(1, 26):
-    img = U[:, i - 1].reshape(_SUPPORTED_IMAGE_DIM)
     fig.add_subplot(5, 5, i)
-    plt.imshow(img, cmap='gray')
+    plt.imshow(U[:, i - 1].reshape(_SUPPORTED_IMAGE_DIM), cmap='gray')
     plt.axis('off')
   plt.show()
-
-  # Print out a few singular values.
-  print(f'Rank: {len(s)}')
-  print(s[:100])
 
   # Plot singular values (normalized) to show the decay.
   plt.title('Singular Value Decay for Images')
   plt.ylabel('Singular Values')
-  t = np.arange(0, len(s))
-  plt.xticks(np.arange(0, len(s), 500))
-  plt.plot(t, s)
+  t = np.arange(0, len(sigmas))
+  plt.xticks(np.arange(0, len(sigmas), 10))
+  plt.plot(t, sigmas)
+  plt.show()
+
+  # Reconstruct a few images with top K singular values.
+  top_k1 = top_singular_values_with_percentile(sigmas, 0.85)
+  print(f'85%: {top_k1}')
+  top_k2 = top_singular_values_with_percentile(sigmas, 0.90)
+  print(f'90%: {top_k2}')
+  top_k3 = top_singular_values_with_percentile(sigmas, 0.95)
+  print(f'95%: {top_k3}')
+  top_k4 = top_singular_values_with_percentile(sigmas, 0.99)
+  print(f'99%: {top_k4}')
+
+  reconstructed_images1 = U[:, :top_k1] @ np.diag(
+      sigmas[:top_k1]) @ Vh[:top_k1, :]
+  reconstructed_images2 = U[:, :top_k2] @ np.diag(
+      sigmas[:top_k2]) @ Vh[:top_k2, :]
+  reconstructed_images3 = U[:, :top_k3] @ np.diag(
+      sigmas[:top_k3]) @ Vh[:top_k3, :]
+  reconstructed_images4 = U[:, :top_k4] @ np.diag(
+      sigmas[:top_k4]) @ Vh[:top_k4, :]
+
+  # Plot a first few reshaped columns of `U`
+  fig = plt.figure(figsize=(8, 8))
+  fig.suptitle('Reconstructed vs. Original Images')
+  for i in range(1, 6):
+    fig.add_subplot(5, 5, i)
+    plt.imshow(reconstructed_images1[:, i - 1].reshape(_SUPPORTED_IMAGE_DIM),
+               cmap='gray')
+    plt.axis('off')
+    fig.add_subplot(5, 5, i + 5)
+    plt.imshow(reconstructed_images2[:, i - 1].reshape(_SUPPORTED_IMAGE_DIM),
+               cmap='gray')
+    plt.axis('off')
+    fig.add_subplot(5, 5, i + 5 * 2)
+    plt.imshow(reconstructed_images3[:, i - 1].reshape(_SUPPORTED_IMAGE_DIM),
+               cmap='gray')
+    plt.axis('off')
+    fig.add_subplot(5, 5, i + 5 * 3)
+    plt.imshow(reconstructed_images4[:, i - 1].reshape(_SUPPORTED_IMAGE_DIM),
+               cmap='gray')
+    plt.axis('off')
+    fig.add_subplot(5, 5, i + 5 * 4)
+    plt.imshow(images[:, i - 1].reshape(_SUPPORTED_IMAGE_DIM), cmap='gray')
+    plt.axis('off')
+  fig.tight_layout()
   plt.show()
 
 
