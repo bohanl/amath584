@@ -104,90 +104,70 @@ def randomized_svd(A, k):
     return np.linalg.svd(B)
 
 
-def top_singular_values_with_percentile(sigmas, percentile=0.9):
-  """
-  Returns the number of singular value used to achieve certain percentile
-  of the total.
-  """
-  assert percentile > 0 and percentile <= 1
-  total = np.sum(sigmas**2)
-  idx, current = 0, 0.0
-  for i, s in enumerate(sigmas):
-    current += s**2
-    if current >= (total * percentile):
-      idx = i
-      break
+def power_iteration(A):
+  m, _ = A.shape
+  # Initial guess v0 (normalized).
+  v = np.random.randn(m)
+  v = v / np.linalg.norm(v)
+  # Power iterations
+  eigenval = 0
+  steps = 0
+  while True:
+    w = A @ v
+    v = w / np.linalg.norm(w)
+    # The largest eigenvalue in each iteration.
+    new_eigenval = v.T.conjugate() @ A @ v
+    if np.abs(new_eigenval - eigenval) < 1e-10:
+        break
+    eigenval = new_eigenval
+    steps += 1
 
-  return idx + 1
+  return eigenval, v, steps
 
 
 def main():
+  """
   # Do SVD analysis for cropped images.
   images = concat_images(read_images())
   print(f'Images size: {images.shape}')
+  # True SVD
   U, sigmas, Vh = compute_svd(images)
+  # SVD using randomized sampling
+  print(f'image rank is {np.linalg.matrix_rank(images)}')
 
-  # Plot a first few reshaped columns of `U`
-  fig = plt.figure(figsize=(8, 8))
-  fig.suptitle('Orthonormal Basis for Images')
-  for i in range(1, 26):
-    fig.add_subplot(5, 5, i)
-    plt.imshow(U[:, i - 1].reshape(_SUPPORTED_IMAGE_DIM), cmap='gray')
-    plt.axis('off')
+  eigenval, _, steps = power_iteration(images.T @ images)
+
+  print(f'iterations = {steps}, largest eigenvalue = {eigenval}')
+  print(f'Leading SVD mode = {sigmas[0]}')
+
+  ax = plt.subplot()
+
+  ks = np.array([10, 20, 30, 40, 50, 100])
+  ax.plot(np.arange(ks[-1]), sigmas[:ks[-1]], label='True')
+  for k in ks:
+      U_rnd, sigmas_rnd, Vh_rnd = randomized_svd(images, k=k)
+      ax.plot(np.arange(k), sigmas_rnd, label=f'# Samples = {k}')
+  ax.set(xlabel='Modes', ylabel='Values',
+       title='Singular Value Decay')
+  ax.grid(True)
+  ax.legend()
   plt.show()
+  """
 
-  # Plot singular values (normalized) to show the decay.
-  plt.title('Singular Value Decay for Images')
-  plt.ylabel('Singular Values')
-  t = np.arange(0, len(sigmas))
-  plt.xticks(np.arange(0, len(sigmas), 10))
-  plt.plot(t, sigmas)
-  plt.show()
+  m = 10
+  A = np.random.randn(m, m)
+  A = A.T @ A  # make `A` symmetric
 
-  # Reconstruct a few images with top K singular values.
-  top_k1 = top_singular_values_with_percentile(sigmas, 0.85)
-  print(f'85%: {top_k1}')
-  top_k2 = top_singular_values_with_percentile(sigmas, 0.90)
-  print(f'90%: {top_k2}')
-  top_k3 = top_singular_values_with_percentile(sigmas, 0.95)
-  print(f'95%: {top_k3}')
-  top_k4 = top_singular_values_with_percentile(sigmas, 0.99)
-  print(f'99%: {top_k4}')
+  eigenvals, eigenvecs = np.linalg.eig(A)
 
-  reconstructed_images1 = U[:, :top_k1] @ np.diag(
-      sigmas[:top_k1]) @ Vh[:top_k1, :]
-  reconstructed_images2 = U[:, :top_k2] @ np.diag(
-      sigmas[:top_k2]) @ Vh[:top_k2, :]
-  reconstructed_images3 = U[:, :top_k3] @ np.diag(
-      sigmas[:top_k3]) @ Vh[:top_k3, :]
-  reconstructed_images4 = U[:, :top_k4] @ np.diag(
-      sigmas[:top_k4]) @ Vh[:top_k4, :]
+  print("========")
+  print(eigenvals)
+  print("========")
 
-  # Plot a first few reshaped columns of `U`
-  fig = plt.figure(figsize=(8, 8))
-  fig.suptitle('Reconstructed vs. Original Images')
-  for i in range(1, 6):
-    fig.add_subplot(5, 5, i)
-    plt.imshow(reconstructed_images1[:, i - 1].reshape(_SUPPORTED_IMAGE_DIM),
-               cmap='gray')
-    plt.axis('off')
-    fig.add_subplot(5, 5, i + 5)
-    plt.imshow(reconstructed_images2[:, i - 1].reshape(_SUPPORTED_IMAGE_DIM),
-               cmap='gray')
-    plt.axis('off')
-    fig.add_subplot(5, 5, i + 5 * 2)
-    plt.imshow(reconstructed_images3[:, i - 1].reshape(_SUPPORTED_IMAGE_DIM),
-               cmap='gray')
-    plt.axis('off')
-    fig.add_subplot(5, 5, i + 5 * 3)
-    plt.imshow(reconstructed_images4[:, i - 1].reshape(_SUPPORTED_IMAGE_DIM),
-               cmap='gray')
-    plt.axis('off')
-    fig.add_subplot(5, 5, i + 5 * 4)
-    plt.imshow(images[:, i - 1].reshape(_SUPPORTED_IMAGE_DIM), cmap='gray')
-    plt.axis('off')
-  fig.tight_layout()
-  plt.show()
+  eigenval, _, steps = power_iteration(A)
+
+  print(f'iterations = {steps}, largest eigenvalue = {eigenval}')
+  print(f'True largest eigenvalue = {eigenvals[0]}')
 
 
 if __name__ == '__main__':
